@@ -1,0 +1,979 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>UseMe App</title>
+  <!-- Load Tailwind CSS via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Load Lucide Icons via CDN -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Load Font Awesome -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <!-- Google Fonts for UseMe title -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Kaisei+Decol&family=Noto+Serif+TC:wght@200..900&family=Reggae+One&family=Rubik+Puddles&family=Shippori+Mincho+B1&display=swap" rel="stylesheet">
+  <!-- html2canvas & jsPDF for PDF export -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <style>
+    .shake {
+      animation: shake 0.5s infinite;
+    }
+    @keyframes shake {
+      0% { transform: translateX(0); }
+      25% { transform: translateX(-2px) rotate(-1deg); }
+      50% { transform: translateX(2px) rotate(1deg); }
+      75% { transform: translateX(-2px) rotate(-1deg); }
+      100% { transform: translateX(0); }
+    }
+    .fade-out {
+      animation: fadeOut 0.3s ease forwards;
+    }
+    @keyframes fadeOut {
+      0% { opacity: 1; transform: scale(1); }
+      100% { opacity: 0; transform: scale(0.8); }
+    }
+    .notification {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      background-color: rgba(236, 72, 153, 0.9);
+      color: white;
+      padding: 1rem;
+      text-align: center;
+      z-index: 50;
+      transform: translateY(-100%);
+      transition: transform 0.3s ease;
+    }
+    .notification.show {
+      transform: translateY(0);
+    }
+    .rubik-puddles-regular {
+      font-family: "Rubik Puddles", system-ui;
+      font-weight: 400;
+      font-style: normal;
+    }
+    .manual-content-block {
+      margin-right: 4px !important;
+      margin-bottom: 4px !important;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <!-- Load React and ReactDOM via CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"></script>
+  <!-- Load Babel for JSX transformation -->
+  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7/babel.min.js"></script>
+
+  <script type="text/babel">
+    const { useState } = React;
+
+    // Helper function to render Lucide icons as React components
+    const LucideIcon = ({ name, size = 24, color = 'currentColor' }) => {
+      return React.createElement('i', {
+        className: `lucide lucide-${name.toLowerCase()}`,
+        style: { width: size, height: size, color },
+        ref: (el) => {
+          if (el && window.lucide) {
+            window.lucide.createIcons();
+          }
+        }
+      });
+    };
+
+    function UseMe() {
+      const [currentTab, setCurrentTab] = useState("home");
+      const [target, setTarget] = useState("");
+      const [owner, setOwner] = useState("");
+      const [photo, setPhoto] = useState(null);
+      const [currentButton, setCurrentButton] = useState("button0");
+      const [selectedStyle, setSelectedStyle] = useState("");
+      const [selectedPreference, setSelectedPreference] = useState("");
+      const [selectedAction, setSelectedAction] = useState("");
+      const [customPreferences, setCustomPreferences] = useState([]);
+      const [customActions, setCustomActions] = useState([]);
+      const [newPreference, setNewPreference] = useState("");
+      const [newAction, setNewAction] = useState("");
+      const [contentInput, setContentInput] = useState("");
+      const [showContentInput, setShowContentInput] = useState(false);
+      const [appendToExisting, setAppendToExisting] = useState(false);
+      const [manualContents, setManualContents] = useState([]);
+      const [editMode, setEditMode] = useState("none");
+      const [editingContent, setEditingContent] = useState(null);
+      const [dragIndex, setDragIndex] = useState(null);
+      const [manuals, setManuals] = useState([]);
+      const [deletedManuals, setDeletedManuals] = useState([]);
+      const [showManuals, setShowManuals] = useState(false);
+      const [showDeletedManuals, setShowDeletedManuals] = useState(false);
+      const [showDeleteHint, setShowDeleteHint] = useState(false);
+      const [deleteManualIds, setDeleteManualIds] = useState([]);
+      const [selectMode, setSelectMode] = useState(false);
+      const [manualSelectMode, setManualSelectMode] = useState(false);
+      const [selectedManuals, setSelectedManuals] = useState([]);
+      const [notification, setNotification] = useState("");
+
+      const showNotification = (message) => {
+        setNotification(message);
+        setTimeout(() => setNotification(""), 3000);
+      };
+
+      const hasSameCategory = (preference, action) => {
+        return manualContents.some(item => 
+          item.preference === preference && item.action === action
+        );
+      };
+
+      const handleMakeTab = () => {
+        setCurrentTab("make");
+        setCurrentButton("button0");
+        setEditMode("none");
+      };
+
+      const switchToButton = (button, preference = "") => {
+        setCurrentButton(button);
+        if (preference && button === "button3") {
+          setSelectedPreference(preference);
+        }
+        setEditMode("none");
+      };
+
+      const handleActionSelect = (action) => {
+        setSelectedAction(action);
+        setShowContentInput(true);
+        setAppendToExisting(hasSameCategory(selectedPreference, action));
+        showNotification(`【${target}】${selectedPreference}${action}：`);
+      };
+
+      const addCustomPreference = () => {
+        if (newPreference.trim()) {
+          setCustomPreferences([...customPreferences, newPreference.trim()]);
+          showNotification(`【${target}】${newPreference.trim()}：`);
+          setNewPreference("");
+        }
+      };
+
+      const addCustomAction = () => {
+        if (newAction.trim()) {
+          setCustomActions([...customActions, newAction.trim()]);
+          setNewAction("");
+        }
+      };
+
+      const addContent = () => {
+        if (contentInput.trim()) {
+          const newContent = {
+            preference: selectedPreference,
+            action: selectedAction,
+            content: contentInput,
+            appendToExisting: appendToExisting
+          };
+          
+          if (appendToExisting) {
+            const updatedContents = manualContents.map(item => {
+              if (item.preference === selectedPreference && item.action === selectedAction) {
+                return {
+                  ...item,
+                  contents: [...(item.contents || []), contentInput]
+                };
+              }
+              return item;
+            });
+            
+            if (!updatedContents.some(item => item.preference === selectedPreference && item.action === selectedAction)) {
+              updatedContents.push({
+                preference: selectedPreference,
+                action: selectedAction,
+                contents: [contentInput]
+              });
+            }
+            
+            setManualContents(updatedContents);
+          } else {
+            setManualContents([...manualContents, {
+              preference: selectedPreference,
+              action: selectedAction,
+              contents: [contentInput]
+            }]);
+          }
+          
+          setContentInput("");
+          setShowContentInput(false);
+          setAppendToExisting(hasSameCategory(selectedPreference, selectedAction));
+          setCurrentButton("button2");
+        }
+      };
+
+      const cancelAddContent = () => {
+        setContentInput("");
+        setShowContentInput(false);
+        setAppendToExisting(hasSameCategory(selectedPreference, selectedAction));
+      };
+
+      const selectStyle = (style) => {
+        setSelectedStyle(style);
+        setEditMode("none");
+      };
+
+      const editContent = (preference, action, index, newContent) => {
+        const updatedContents = manualContents.map(item => {
+          if (item.preference === preference && item.action === action) {
+            const newContents = [...item.contents];
+            newContents[index] = newContent;
+            return { ...item, contents: newContents };
+          }
+          return item;
+        });
+        setManualContents(updatedContents);
+        setEditingContent(null);
+      };
+
+      const deleteContent = (preference, action, index) => {
+        const updatedContents = manualContents.map(item => {
+          if (item.preference === preference && item.action === action) {
+            const newContents = item.contents.filter((_, i) => i !== index);
+            return { ...item, contents: newContents };
+          }
+          return item;
+        }).filter(item => item.contents.length > 0);
+        setManualContents(updatedContents);
+      };
+
+      const handleDragStart = (preference, action, index) => {
+        setDragIndex({ preference, action, index });
+      };
+
+      const handleDragOver = (e) => {
+        e.preventDefault();
+      };
+
+      const handleDrop = (preference, action, targetIndex) => {
+        if (!dragIndex) return;
+        const { preference: sourcePref, action: sourceAct, index: sourceIndex } = dragIndex;
+        if (sourcePref === preference && sourceAct === action && sourceIndex !== targetIndex) {
+          const updatedContents = manualContents.map(item => {
+            if (item.preference === preference && item.action === action) {
+              const newContents = [...item.contents];
+              const [movedItem] = newContents.splice(sourceIndex, 1);
+              newContents.splice(targetIndex, 0, movedItem);
+              return { ...item, contents: newContents };
+            }
+            return item;
+          });
+          setManualContents(updatedContents);
+        }
+        setDragIndex(null);
+      };
+
+      const handlePhotoUpload = (e) => {
+        const file = e.target.files[0];
+        if (file) {
+          const reader = new FileReader();
+          reader.onload = () => setPhoto(reader.result);
+          reader.readAsDataURL(file);
+        }
+      };
+
+      const saveManual = () => {
+        if (target && owner) {
+          const newManual = {
+            id: Date.now().toString(),
+            target,
+            owner,
+            contents: manualContents,
+            style: selectedStyle,
+            photo,
+            createdAt: new Date()
+          };
+          setManuals([...manuals, newManual]);
+          setTarget("");
+          setOwner("");
+          setManualContents([]);
+          setSelectedStyle("");
+          setPhoto(null);
+          setCurrentTab("home");
+          setEditMode("none");
+        }
+      };
+
+      const editManual = (manual) => {
+        setTarget(manual.target);
+        setOwner(manual.owner);
+        setManualContents(manual.contents);
+        setSelectedStyle(manual.style);
+        setPhoto(manual.photo);
+        setCurrentTab("make");
+        setManuals(manuals.filter(m => m.id !== manual.id));
+        setManualSelectMode(false);
+        setSelectedManuals([]);
+      };
+
+      const deleteManuals = () => {
+        const selected = manuals.filter(m => selectedManuals.includes(m.id));
+        setDeletedManuals([...deletedManuals, ...selected.map(m => ({ ...m, deletedAt: new Date() }))]);
+        setManuals(manuals.filter(m => !selectedManuals.includes(m.id)));
+        setManualSelectMode(false);
+        setSelectedManuals([]);
+        setShowDeleteHint(false);
+        setDeleteManualIds([]);
+      };
+
+      const shareManuals = () => {
+        alert('分享功能尚未實現');
+      };
+
+      const restoreManuals = () => {
+        const selected = deletedManuals.filter(m => selectedManuals.includes(m.id));
+        setManuals([...manuals, ...selected.map(m => ({ ...m, deletedAt: null }))]);
+        setDeletedManuals(deletedManuals.filter(m => !selectedManuals.includes(m.id)));
+        setSelectMode(false);
+        setSelectedManuals([]);
+      };
+
+      const permanentlyDeleteManuals = () => {
+        setDeletedManuals(deletedManuals.filter(m => !selectedManuals.includes(m.id)));
+        setSelectMode(false);
+        setSelectedManuals([]);
+      };
+
+      const getContentWidthClass = (content) => {
+        const len = content.length;
+        if (len <= 2) return 'w-16';
+        if (len === 3) return 'w-20';
+        return 'w-24';
+      };
+
+      const renderManualContent = () => {
+        return manualContents.map((item, index) => (
+          React.createElement('div', { key: index, className: 'mb-4' },
+            React.createElement('h3', { className: 'font-medium text-pink-600 mb-2' }, `${item.preference}${item.action}：`),
+            React.createElement('div', { className: 'grid grid-cols-4 gap-2' },
+              item.contents.map((content, i) => (
+                React.createElement('div', {
+                  key: i,
+                  className: `relative bg-[#b0b7c4] rounded p-2 text-gray-700 manual-content-block ${getContentWidthClass(content)} ${editMode !== 'none' ? 'shake' : ''}`,
+                  draggable: editMode === 'edit',
+                  onDragStart: () => handleDragStart(item.preference, item.action, i),
+                  onDragOver: handleDragOver,
+                  onDrop: () => handleDrop(item.preference, item.action, i),
+                  onClick: editMode === 'edit' ? () => setEditingContent({ preference: item.preference, action: item.action, index: i, content }) : null
+                },
+                  content,
+                  editMode === 'delete' && (
+                    React.createElement('button', {
+                      className: 'absolute top-0 right-0 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center',
+                      onClick: (e) => { e.stopPropagation(); deleteContent(item.preference, item.action, i); }
+                    }, '×')
+                  )
+                )
+              ))
+            )
+          )
+        ));
+      };
+
+      // PDF 導出功能
+      const exportPDF = async () => {
+        const manualPages = document.querySelectorAll('.manual-preview-page');
+        const { jsPDF } = window.jspdf;
+        const pdf = new jsPDF({ unit: 'px', format: [400, 500] });
+        for (let i = 0; i < manualPages.length; i++) {
+          const canvas = await html2canvas(manualPages[i], { scale: 2 });
+          const imgData = canvas.toDataURL('image/png');
+          if (i > 0) pdf.addPage([400, 500], 'p');
+          pdf.addImage(imgData, 'PNG', 0, 0, 400, 500);
+        }
+        pdf.save('manual.pdf');
+      };
+
+      // 分頁邏輯
+      const getManualPages = () => {
+        // 將所有內容攤平成一個陣列，每組為 {title, contents:[]}，每個 contents 也是陣列
+        const flat = [];
+        manualContents.forEach(item => {
+          flat.push({ title: `${item.preference}${item.action}：`, contents: item.contents });
+        });
+        // 每組內容可能有多個內容
+        const allRows = [];
+        flat.forEach(row => {
+          if (row.contents && row.contents.length > 0) {
+            allRows.push({ title: row.title, contents: row.contents });
+          }
+        });
+        // 展平成一行一行（每行一個標題+內容陣列）
+        const lines = [];
+        allRows.forEach(row => {
+          lines.push({ title: row.title, contents: row.contents });
+        });
+        // 分頁：第一頁6行，之後每頁8行
+        const pages = [];
+        let pageSize = 6;
+        let i = 0;
+        while (i < lines.length) {
+          pages.push(lines.slice(i, i + pageSize));
+          i += pageSize;
+          pageSize = 8;
+        }
+        return pages;
+      };
+
+      return (
+        React.createElement('div', { className: 'flex flex-col h-screen bg-pink-50' },
+          // Notification
+          React.createElement('div', {
+            className: `notification ${notification ? 'show' : ''}`,
+            style: { display: notification ? 'block' : 'none' }
+          }, notification),
+
+          // Header
+          React.createElement('header', { className: 'p-4 text-center bg-pink-200' },
+            React.createElement('h1', { className: 'text-3xl font-bold text-pink-600 rubik-puddles-regular' }, 'UseMe')
+          ),
+
+          // Main Content
+          React.createElement('main', { className: 'flex-grow overflow-auto' },
+            currentTab === 'home' && (
+              React.createElement('div', { className: 'p-6 flex flex-col items-center' },
+                React.createElement('div', { className: 'mb-6 relative' },
+                  React.createElement('div', { className: 'w-32 h-32 bg-pink-100 rounded-full flex items-center justify-center mx-auto' },
+                    photo ? (
+                      React.createElement('img', { src: photo, className: 'w-full h-full rounded-full object-cover' })
+                    ) : (
+                      React.createElement(LucideIcon, { name: 'Book', size: 48, color: '#ec4899' })
+                    )
+                  ),
+                  React.createElement('label', {
+                    htmlFor: 'upload-photo1',
+                    className: 'absolute bottom-0 left-1/2 transform -translate-x-1/2 bg-pink-300 text-white text-xs px-2 py-1 rounded'
+                  }, '上傳圖片'),
+                  React.createElement('input', {
+                    id: 'upload-photo1',
+                    type: 'file',
+                    accept: 'image/*',
+                    className: 'hidden',
+                    onChange: handlePhotoUpload
+                  })
+                ),
+                React.createElement('div', { className: 'text-center mb-8' },
+                  React.createElement('h2', { className: 'text-2xl font-bold text-pink-600' }, `【${target}】的使用手冊`),
+                  React.createElement('p', { className: 'text-lg text-pink-500' }, `製作人：${owner}`)
+                ),
+                React.createElement('div', { className: 'w-full max-w-md' },
+                  React.createElement('div', { className: 'mb-6' },
+                    React.createElement('label', { className: 'block text-pink-600 mb-2 font-medium' }, '使用手冊對象'),
+                    React.createElement('input', {
+                      type: 'text',
+                      value: target,
+                      onChange: (e) => setTarget(e.target.value),
+                      placeholder: '例如：我家狗狗',
+                      className: 'w-full px-4 py-2 rounded-lg border-2 border-pink-300 focus:outline-none focus:border-pink-500'
+                    })
+                  ),
+                  React.createElement('div', { className: 'mb-6' },
+                    React.createElement('label', { className: 'block text-pink-600 mb-2 font-medium' }, '手冊製作人'),
+                    React.createElement('input', {
+                      type: 'text',
+                      value: owner,
+                      onChange: (e) => setOwner(e.target.value),
+                      placeholder: '例如：狗狗的媽媽',
+                      className: 'w-full px-4 py-2 rounded-lg border-2 border-pink-300 focus:outline-none focus:border-pink-500'
+                    })
+                  ),
+                  React.createElement('button', {
+                    onClick: handleMakeTab,
+                    className: 'w-full bg-pink-400 hover:bg-pink-500 text-white font-bold py-3 px-4 rounded-lg transition duration-300'
+                  }, '開始製作')
+                ),
+                React.createElement('div', { className: 'mt-8 flex space-x-4' },
+                  React.createElement('div', { className: 'w-16 h-16 bg-pink-200 rounded-full flex items-center justify-center' },
+                    React.createElement(LucideIcon, { name: 'Heart', size: 24, color: '#ec4899' })
+                  ),
+                  React.createElement('div', { className: 'w-16 h-16 bg-pink-200 rounded-full flex items-center justify-center' },
+                    React.createElement(LucideIcon, { name: 'Heart', size: 24, color: '#ec4899' })
+                  )
+                )
+              )
+            ),
+
+            currentTab === 'make' && (
+              React.createElement('div', { className: 'flex flex-col h-full' },
+                (showContentInput || editingContent) && (
+                  React.createElement('div', { className: 'absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center z-10' },
+                    React.createElement('div', { className: 'bg-white p-6 rounded-lg w-5/6 max-w-md' },
+                      React.createElement('h3', { className: 'text-lg font-bold text-pink-600 mb-4' }, 
+                        editingContent ? `編輯內容` : `添加${selectedPreference}${selectedAction}的內容`
+                      ),
+                      hasSameCategory(selectedPreference, selectedAction) && (
+                        React.createElement('div', { className: 'mb-4 flex items-center' },
+                          React.createElement('input', {
+                            type: 'checkbox',
+                            id: 'appendCheckbox',
+                            checked: appendToExisting,
+                            onChange: (e) => setAppendToExisting(e.target.checked),
+                            className: 'mr-2'
+                          }),
+                          React.createElement('label', { htmlFor: 'appendCheckbox', className: 'text-gray-700' }, '添加在已有的分類中')
+                        )
+                      ),
+                      React.createElement('input', {
+                        type: 'text',
+                        value: editingContent ? editingContent.content : contentInput,
+                        onChange: (e) => editingContent ? setEditingContent({ ...editingContent, content: e.target.value }) : setContentInput(e.target.value),
+                        placeholder: editingContent ? '輸入新內容' : `輸入${selectedPreference}${selectedAction}的內容`,
+                        className: 'w-full px-4 py-2 rounded-lg border-2 border-pink-300 focus:outline-none focus:border-pink-500 mb-4'
+                      }),
+                      React.createElement('div', { className: 'flex justify-end space-x-2' },
+                        React.createElement('button', {
+                          onClick: editingContent ? () => setEditingContent(null) : cancelAddContent,
+                          className: 'px-6 py-2 bg-gray-300 text-gray-700 rounded-lg'
+                        }, '取消'),
+                        React.createElement('button', {
+                          onClick: editingContent ? () => editContent(editingContent.preference, editingContent.action, editingContent.index, editingContent.content) : addContent,
+                          className: 'px-6 py-2 bg-pink-500 text-white rounded-lg'
+                        }, '確定')
+                      )
+                    )
+                  )
+                ),
+
+                React.createElement('div', { className: 'flex-grow p-4' },
+                  React.createElement('div', { className: 'h-full border-2 border-pink-300 rounded-lg bg-white p-4 overflow-auto relative' },
+                    React.createElement('div', { className: 'flex items-center mb-2' },
+                      photo && (
+                        React.createElement('img', {
+                          src: photo,
+                          className: 'w-12 h-12 rounded-full object-cover mr-2'
+                        })
+                      ),
+                      React.createElement('h2', { className: 'text-2xl font-serif text-gray-800' }, `【${target}】的使用手冊`)
+                    ),
+                    React.createElement('div', { className: 'absolute top-2 right-2 flex space-x-2' },
+                      React.createElement('button', {
+                        onClick: () => setEditMode(editMode === 'edit' ? 'none' : 'edit'),
+                        className: `px-4 py-1 ${editMode === 'edit' ? 'bg-pink-500' : 'bg-pink-300'} text-white rounded`
+                      }, '編輯'),
+                      React.createElement('button', {
+                        onClick: () => setEditMode(editMode === 'delete' ? 'none' : 'delete'),
+                        className: `px-4 py-1 ${editMode === 'delete' ? 'bg-pink-500' : 'bg-pink-300'} text-white rounded`
+                      }, '刪除'),
+                      React.createElement('button', {
+                        onClick: saveManual,
+                        className: 'px-4 py-1 bg-pink-300 text-white rounded'
+                      }, '儲存')
+                    ),
+                    editMode === 'edit' && (
+                      React.createElement('p', { className: 'text-sm text-gray-500 mt-2' }, '拖動可更換位置')
+                    ),
+                    selectedStyle === 'elegant' && (
+                      React.createElement('div', { className: 'h-full flex flex-col bg-gradient-to-b from-gray-50 to-gray-100 border border-gray-200 p-4' },
+                        React.createElement('p', { className: 'text-gray-600 italic mb-6' }, `製作人：${owner}`),
+                        React.createElement('div', { className: 'border-t border-gray-300 w-24 mb-6' }),
+                        React.createElement('div', { className: 'flex-grow' }, renderManualContent())
+                      )
+                    ),
+                    selectedStyle === 'y2k' && (
+                      React.createElement('div', { className: 'h-full flex flex-col bg-gradient-to-r from-purple-200 via-pink-200 to-blue-200 p-4' },
+                        React.createElement('p', { className: 'text-blue-600 font-bold mb-6' }, `製作人：${owner}`),
+                        React.createElement('div', { className: 'flex space-x-2 mb-6' },
+                          React.createElement('div', { className: 'w-4 h-4 rounded-full bg-pink-400' }),
+                          React.createElement('div', { className: 'w-4 h-4 rounded-full bg-purple-400' }),
+                          React.createElement('div', { className: 'w-4 h-4 rounded-full bg-blue-400' })
+                        ),
+                        React.createElement('div', { className: 'flex-grow' }, renderManualContent())
+                      )
+                    ),
+                    selectedStyle === 'cute' && (
+                      React.createElement('div', { className: 'h-full flex flex-col bg-pink-100 p-4' },
+                        React.createElement('div', { className: 'w-16 h-16 mb-4 bg-pink-200 rounded-full flex items-center justify-center self-center' },
+                          React.createElement(LucideIcon, { name: 'Heart', size: 32, color: '#ec4899' })
+                        ),
+                        React.createElement('p', { className: 'text-pink-500 text-center mb-6' }, `製作人：${owner}`),
+                        React.createElement('div', { className: 'flex space-x-2 justify-center mb-6' },
+                          React.createElement('div', { className: 'w-3 h-3 rounded-full bg-pink-300' }),
+                          React.createElement('div', { className: 'w-3 h-3 rounded-full bg-pink-400' }),
+                          React.createElement('div', { className: 'w-3 h-3 rounded-full bg-pink-500' })
+                        ),
+                        React.createElement('div', { className: 'flex-grow' }, renderManualContent())
+                      )
+                    ),
+                    !selectedStyle && (
+                      React.createElement('div', { className: 'h-full flex flex-col items-center justify-center' },
+                        React.createElement('p', { className: 'text-gray-500' }, '請選擇風格或內容')
+                      )
+                    )
+                  )
+                ),
+
+                React.createElement('div', { className: 'px-4 py-3 bg-pink-100 border-t border-pink-200' },
+                  currentButton === 'button0' && (
+                    React.createElement('div', { className: 'flex space-x-4 overflow-x-auto pb-2' },
+                      React.createElement('button', {
+                        onClick: () => switchToButton('button1'),
+                        className: 'px-6 py-2 bg-pink-300 text-white rounded-full whitespace-nowrap flex-shrink-0'
+                      }, '風格'),
+                      React.createElement('button', {
+                        onClick: () => switchToButton('button2'),
+                        className: 'px-6 py-2 bg-pink-300 text-white rounded-full whitespace-nowrap flex-shrink-0'
+                      }, '內容')
+                    )
+                  ),
+                  currentButton === 'button1' && (
+                    React.createElement('div', { className: 'flex space-x-4 overflow-x-auto pb-2' },
+                      React.createElement('button', {
+                        onClick: () => switchToButton('button0'),
+                        className: 'px-6 py-2 bg-gray-300 text-gray-700 rounded-full whitespace-nowrap flex-shrink-0'
+                      }, '返回'),
+                      React.createElement('button', {
+                        onClick: () => selectStyle('elegant'),
+                        className: `px-6 py-2 ${selectedStyle === 'elegant' ? 'bg-pink-500' : 'bg-pink-300'} text-white rounded-full whitespace-nowrap flex-shrink-0`
+                      }, '高級'),
+                      React.createElement('button', {
+                        onClick: () => selectStyle('y2k'),
+                        className: `px-6 py-2 ${selectedStyle === 'y2k' ? 'bg-pink-500' : 'bg-pink-300'} text-white rounded-full whitespace-nowrap flex-shrink-0`
+                      }, 'Y2K'),
+                      React.createElement('button', {
+                        onClick: () => selectStyle('cute'),
+                        className: `px-6 py-2 ${selectedStyle === 'cute' ? 'bg-pink-500' : 'bg-pink-300'} text-white rounded-full whitespace-nowrap flex-shrink-0`
+                      }, '可愛')
+                    )
+                  ),
+                  currentButton === 'button2' && (
+                    React.createElement('div', { className: 'flex space-x-4 overflow-x-auto pb-2' },
+                      React.createElement('button', {
+                        onClick: () => switchToButton('button0'),
+                        className: 'px-6 py-2 bg-gray-300 text-gray-700 rounded-full whitespace-nowrap flex-shrink-0'
+                      }, '返回'),
+                      React.createElement('div', { className: 'flex items-center space-x-2 flex-shrink-0' },
+                        React.createElement('input', {
+                          type: 'text',
+                          value: newPreference,
+                          onChange: (e) => setNewPreference(e.target.value),
+                          placeholder: '新增類別',
+                          className: 'px-3 py-1 rounded-lg border border-pink-300 w-24'
+                        }),
+                        React.createElement('button', {
+                          onClick: addCustomPreference,
+                          className: 'px-4 py-2 bg-pink-300 text-white rounded-full'
+                        }, '新增')
+                      ),
+                      React.createElement('button', {
+                        onClick: () => switchToButton('button3', '喜歡'),
+                        className: 'px-6 py-2 bg-pink-300 text-white rounded-full whitespace-nowrap flex-shrink-0'
+                      }, '喜歡'),
+                      React.createElement('button', {
+                        onClick: () => switchToButton('button3', '不喜歡'),
+                        className: 'px-6 py-2 bg-pink-300 text-white rounded-full whitespace-nowrap flex-shrink-0'
+                      }, '不喜歡'),
+                      customPreferences.map((preference, index) => (
+                        React.createElement('button', {
+                          key: index,
+                          onClick: () => switchToButton('button3', preference),
+                          className: 'px-6 py-2 bg-pink-300 text-white rounded-full whitespace-nowrap flex-shrink-0'
+                        }, preference)
+                      ))
+                    )
+                  ),
+                  currentButton === 'button3' && (
+                    React.createElement('div', { className: 'flex space-x-4 overflow-x-auto pb-2' },
+                      React.createElement('button', {
+                        onClick: () => switchToButton('button2'),
+                        className: 'px-6 py-2 bg-gray-300 text-gray-700 rounded-full whitespace-nowrap flex-shrink-0'
+                      }, '返回'),
+                      React.createElement('div', { className: 'flex items-center space-x-2 flex-shrink-0' },
+                        React.createElement('input', {
+                          type: 'text',
+                          value: newAction,
+                          onChange: (e) => setNewAction(e.target.value),
+                          placeholder: '新增類別',
+                          className: 'px-3 py-1 rounded-lg border border-pink-300 w-24'
+                        }),
+                        React.createElement('button', {
+                          onClick: addCustomAction,
+                          className: 'px-4 py-2 bg-pink-300 text-white rounded-full'
+                        }, '新增')
+                      ),
+                      React.createElement('button', {
+                        onClick: () => handleActionSelect('吃'),
+                        className: 'px-6 py-2 bg-pink-300 text-white rounded-full whitespace-nowrap flex-shrink-0'
+                      }, '吃'),
+                      React.createElement('button', {
+                        onClick: () => handleActionSelect('喝'),
+                        className: 'px-6 py-2 bg-pink-300 text-white rounded-full whitespace-nowrap flex-shrink-0'
+                      }, '喝'),
+                      customActions.map((action, index) => (
+                        React.createElement('button', {
+                          key: index,
+                          onClick: () => handleActionSelect(action),
+                          className: 'px-6 py-2 bg-pink-300 text-white rounded-full whitespace-nowrap flex-shrink-0'
+                        }, action)
+                      ))
+                    )
+                  )
+                )
+              )
+            ),
+
+            currentTab === 'preview' && (
+              React.createElement('div', { className: 'p-6' },
+                React.createElement('button', {
+                  className: 'mb-4 px-4 py-2 bg-pink-500 text-white rounded font-bold',
+                  onClick: exportPDF
+                }, '導出手冊'),
+                getManualPages().map((page, pageIndex) => (
+                  React.createElement('div', {
+                    key: pageIndex,
+                    className: `manual-preview-page mx-auto mb-8 rounded-lg shadow-lg overflow-auto ${
+                      selectedStyle === 'y2k'
+                        ? 'bg-gradient-to-r from-purple-200 via-pink-200 to-blue-200'
+                        : selectedStyle === 'elegant'
+                        ? 'bg-gradient-to-b from-gray-50 to-gray-100 border border-gray-200'
+                        : selectedStyle === 'cute'
+                        ? 'bg-pink-100'
+                        : 'bg-white'
+                    }`,
+                    style: { width: 400, height: 500, boxSizing: 'border-box', padding: 24, position: 'relative' }
+                  },
+                    // 第一頁才顯示標題與作者
+                    pageIndex === 0 && (
+                      React.createElement('div', null,
+                        React.createElement('h2', { className: 'text-2xl font-bold mb-2 rubik-puddles-regular' }, `【${target}】的使用手冊`),
+                        React.createElement('p', { className: 'text-gray-600 italic mb-4' }, `製作人：${owner}`),
+                        React.createElement('div', { className: 'border-t border-gray-300 w-24 mb-4' })
+                      )
+                    ),
+                    // 內容
+                    page.map((row, idx) => (
+                      React.createElement('div', { key: idx, className: 'mb-2' },
+                        React.createElement('span', { className: 'font-bold', style: { color: '#db2877' } }, row.title),
+                        React.createElement('div', { className: 'flex flex-wrap items-center' },
+                          row.contents.map((content, i) => (
+                            React.createElement('div', {
+                              key: i,
+                              className: 'relative bg-[#b0b7c4] rounded p-2 text-gray-700 manual-content-block',
+                              style: { minWidth: 48, minHeight: 32, marginRight: 4, marginBottom: 4, textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center' }
+                            }, content)
+                          ))
+                        )
+                      )
+                    ))
+                  )
+                ))
+              )
+            ),
+
+            currentTab === 'profile' && (
+              React.createElement('div', { className: 'p-6 flex flex-col' },
+                showDeleteHint && (
+                  React.createElement('div', { id: 'hint1', className: 'absolute inset-0 bg-black bg-opacity-50 flex items-center justify-center z-10' },
+                    React.createElement('div', { className: 'bg-white p-6 rounded-lg w-5/6 max-w-md' },
+                      React.createElement('p', { className: 'text-lg text-gray-700 mb-4' }, '確定要刪除選定的手冊嗎？'),
+                      React.createElement('div', { className: 'flex justify-end space-x-2' },
+                        React.createElement('button', {
+                          onClick: () => setShowDeleteHint(false),
+                          className: 'px-6 py-2 bg-gray-300 text-gray-700 rounded-lg'
+                        }, '取消'),
+                        React.createElement('button', {
+                          onClick: deleteManuals,
+                          className: 'px-6 py-2 bg-pink-500 text-white rounded-lg'
+                        }, '確認')
+                      )
+                    )
+                  )
+                ),
+                !showManuals && !showDeletedManuals && (
+                  React.createElement('ul', { id: 'list1', className: 'w-full max-w-md mx-auto' },
+                    React.createElement('li', {
+                      className: 'p-4 bg-white rounded-lg mb-2 shadow cursor-pointer',
+                      onClick: () => alert('我的資料功能尚未實現')
+                    }, '我的資料'),
+                    React.createElement('li', {
+                      className: 'p-4 bg-white rounded-lg mb-2 shadow cursor-pointer',
+                      onClick: () => setShowManuals(true)
+                    }, '我的手冊'),
+                    React.createElement('li', {
+                      className: 'p-4 bg-white rounded-lg mb-2 shadow cursor-pointer',
+                      onClick: () => setShowDeletedManuals(true)
+                    }, '最近刪除'),
+                    React.createElement('li', {
+                      className: 'p-4 bg-white rounded-lg mb-2 shadow cursor-pointer',
+                      onClick: () => alert('聯絡我們功能尚未實現')
+                    }, '聯絡我們')
+                  )
+                ),
+                showManuals && (
+                  React.createElement('div', { className: 'w-full max-w-md mx-auto relative' },
+                    React.createElement('button', {
+                      className: 'mb-4 text-pink-500',
+                      onClick: () => { setShowManuals(false); setManualSelectMode(false); setSelectedManuals([]); }
+                    }, '返回'),
+                    React.createElement('button', {
+                      id: 'button5.1',
+                      className: 'absolute top-0 right-0 px-4 py-1 bg-pink-300 text-white rounded',
+                      onClick: () => setManualSelectMode(!manualSelectMode)
+                    }, manualSelectMode ? '取消' : '選取'),
+                    manuals.map(manual => (
+                      React.createElement('div', {
+                        key: manual.id,
+                        className: 'flex items-center p-4 bg-white rounded-lg mb-2 shadow'
+                      },
+                        manualSelectMode && (
+                          React.createElement('input', {
+                            type: 'checkbox',
+                            checked: selectedManuals.includes(manual.id),
+                            onChange: () => {
+                              setSelectedManuals(
+                                selectedManuals.includes(manual.id)
+                                  ? selectedManuals.filter(id => id !== manual.id)
+                                  : [...selectedManuals, manual.id]
+                              );
+                            },
+                            className: 'mr-2'
+                          })
+                        ),
+                        React.createElement('div', { className: 'flex-1' },
+                          React.createElement('h3', { className: 'font-medium text-pink-600' }, `【${manual.target}】的使用手冊`),
+                          React.createElement('p', { className: 'text-sm text-pink-400' }, `製作人：${manual.owner}`),
+                          manual.contents.length > 0 && (
+                            React.createElement('p', { className: 'text-sm text-gray-500 mt-2' }, `${manual.contents.length} 項內容`)
+                          )
+                        )
+                      )
+                    )),
+                    manualSelectMode && selectedManuals.length > 0 && (
+                      React.createElement('div', { id: 'button5', className: 'flex space-x-2 mt-4' },
+                        React.createElement('button', {
+                          className: 'px-6 py-2 bg-blue-300 text-white rounded-lg',
+                          onClick: shareManuals
+                        }, '分享'),
+                        React.createElement('button', {
+                          className: `px-6 py-2 ${selectedManuals.length === 1 ? 'bg-pink-300' : 'bg-gray-300 cursor-not-allowed'} text-white rounded-lg`,
+                          onClick: () => {
+                            if (selectedManuals.length === 1) {
+                              const manual = manuals.find(m => m.id === selectedManuals[0]);
+                              editManual(manual);
+                            }
+                          },
+                          disabled: selectedManuals.length !== 1
+                        }, '編輯'),
+                        React.createElement('button', {
+                          className: 'px-6 py-2 bg-red-500 text-white rounded-lg',
+                          onClick: () => { setShowDeleteHint(true); setDeleteManualIds(selectedManuals); }
+                        }, '刪除')
+                      )
+                    )
+                  )
+                ),
+                showDeletedManuals && (
+                  React.createElement('div', { className: 'w-full max-w-md mx-auto relative' },
+                    React.createElement('button', {
+                      className: 'mb-4 text-pink-500',
+                      onClick: () => { setShowDeletedManuals(false); setSelectMode(false); setSelectedManuals([]); }
+                    }, '返回'),
+                    React.createElement('p', { id: 'hint2', className: 'text-sm text-gray-500 mb-4' }, '刪除的內容會在30天後自動清空！'),
+                    React.createElement('button', {
+                      id: 'button6',
+                      className: 'absolute top-0 right-0 px-4 py-1 bg-pink-300 text-white rounded',
+                      onClick: () => setSelectMode(!selectMode)
+                    }, selectMode ? '取消' : '選取'),
+                    deletedManuals.filter(manual => {
+                      const deletedAt = new Date(manual.deletedAt);
+                      const now = new Date();
+                      const daysDiff = (now - deletedAt) / (1000 * 60 * 60 * 24);
+                      return daysDiff <= 30;
+                    }).map(manual => (
+                      React.createElement('div', {
+                        key: manual.id,
+                        className: 'flex items-center p-4 bg-white rounded-lg mb-2 shadow'
+                      },
+                        selectMode && (
+                          React.createElement('input', {
+                            type: 'checkbox',
+                            checked: selectedManuals.includes(manual.id),
+                            onChange: () => {
+                              setSelectedManuals(
+                                selectedManuals.includes(manual.id)
+                                  ? selectedManuals.filter(id => id !== manual.id)
+                                  : [...selectedManuals, manual.id]
+                              );
+                            },
+                            className: 'mr-2'
+                          })
+                        ),
+                        React.createElement('div', { className: 'flex-1' },
+                          React.createElement('h3', { className: 'font-medium text-pink-600' }, `【${manual.target}】的使用手冊`),
+                          React.createElement('p', { className: 'text-sm text-pink-400' }, `製作人：${manual.owner}`),
+                          manual.contents.length > 0 && (
+                            React.createElement('p', { className: 'text-sm text-gray-500 mt-2' }, `${manual.contents.length} 項內容`)
+                          )
+                        )
+                      )
+                    )),
+                    selectMode && selectedManuals.length > 0 && (
+                      React.createElement('div', { id: 'button7', className: 'flex space-x-2 mt-4' },
+                        React.createElement('button', {
+                          className: 'px-6 py-2 bg-pink-300 text-white rounded-lg',
+                          onClick: restoreManuals
+                        }, '復原'),
+                        React.createElement('button', {
+                          className: 'px-6 py-2 bg-red-500 text-white rounded-lg',
+                          onClick: permanentlyDeleteManuals
+                        }, '永久刪除')
+                      )
+                    )
+                  )
+                )
+              )
+            )
+          ),
+
+          // Navigation
+          React.createElement('nav', { className: 'bg-white border-t border-pink-200 p-2' },
+            React.createElement('div', { className: 'flex justify-around' },
+              React.createElement('button', {
+                onClick: () => setCurrentTab('home'),
+                className: `p-2 flex flex-col items-center ${currentTab === 'home' ? 'text-pink-500' : 'text-[#374151]'}`
+              },
+                React.createElement('i', { className: 'fa-solid fa-house', style: { fontSize: '24px' } }),
+                React.createElement('span', { className: 'text-xs mt-1' }, '首頁')
+              ),
+              React.createElement('button', {
+                onClick: handleMakeTab,
+                className: `p-2 flex flex-col items-center ${currentTab === 'make' ? 'text-pink-500' : 'text-[#374151]'}`
+              },
+                React.createElement('i', { className: 'fa-solid fa-pen', style: { fontSize: '24px' } }),
+                React.createElement('span', { className: 'text-xs mt-1' }, '製作')
+              ),
+              React.createElement('button', {
+                onClick: () => setCurrentTab('preview'),
+                className: `p-2 flex flex-col items-center ${currentTab === 'preview' ? 'text-pink-500' : 'text-[#374151]'}`
+              },
+                React.createElement('i', { className: 'fa-solid fa-book-open', style: { fontSize: '24px' } }),
+                React.createElement('span', { className: 'text-xs mt-1' }, '預覽')
+              ),
+              React.createElement('button', {
+                onClick: () => setCurrentTab('profile'),
+                className: `p-2 flex flex-col items-center ${currentTab === 'profile' ? 'text-pink-500' : 'text-[#374151]'}`
+              },
+                React.createElement('i', { className: 'fa-solid fa-user', style: { fontSize: '24px' } }),
+                React.createElement('span', { className: 'text-xs mt-1' }, '我')
+              )
+            )
+          )
+        )
+      );
+    }
+
+    ReactDOM.render(React.createElement(UseMe), document.getElementById('root'));
+    window.lucide.createIcons();
+  </script>
+</body>
+</html>
